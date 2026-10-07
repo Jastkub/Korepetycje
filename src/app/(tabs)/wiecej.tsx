@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, Switch, Text, View } from 'react-native';
+import { Pressable, Switch, Text, View } from 'react-native';
 
 import { Card, Header, Screen, SectionLabel, text } from '@/components/ui';
 import {
@@ -16,6 +16,7 @@ import { useApp } from '@/store/AppStore';
 import { ACCENTS, useThemePref, type ThemePref } from '@/theme/ThemeContext';
 import { fonts, radius, spacing } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
+import { showAlert } from '@/lib/alert';
 
 export default function MoreScreen() {
   const c = useColors();
@@ -135,7 +136,7 @@ function RemindersCard() {
     if (value) {
       const ok = await ensurePermission();
       if (!ok) {
-        Alert.alert('Brak zgody', 'Włącz powiadomienia dla aplikacji w ustawieniach telefonu.');
+        showAlert('Brak zgody', 'Włącz powiadomienia dla aplikacji w ustawieniach telefonu.');
         return;
       }
     }

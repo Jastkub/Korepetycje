@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { PrimaryButton, Screen, text } from '@/components/ui';
 import { SUBJECTS } from '@/data/mock';
@@ -9,6 +9,7 @@ import { useApp } from '@/store/AppStore';
 import { DEFAULT_STUDENT_COLOR, PALETTES, studentTone } from '@/theme/studentColors';
 import { fonts, radius, spacing } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
+import { showAlert } from '@/lib/alert';
 
 // 3 najczęstsze przedmioty pokazywane od razu; reszta pod „…".
 const TOP_SUBJECTS = ['Matematyka', 'Język angielski', 'Fizyka'];
@@ -62,7 +63,7 @@ export default function StudentForm() {
 
   const remove = () => {
     if (!id) return;
-    Alert.alert('Usunąć ucznia?', `„${existing?.name ?? ''}" i jego lekcje zostaną usunięte.`, [
+    showAlert('Usunąć ucznia?', `„${existing?.name ?? ''}" i jego lekcje zostaną usunięte.`, [
       { text: 'Anuluj', style: 'cancel' },
       {
         text: 'Usuń',

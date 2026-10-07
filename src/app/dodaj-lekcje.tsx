@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Keyboard, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Keyboard, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Avatar, PrimaryButton, Screen, text } from '@/components/ui';
 import { type Day } from '@/data/mock';
@@ -12,6 +12,7 @@ import { useApp } from '@/store/AppStore';
 import { useThemePref } from '@/theme/ThemeContext';
 import { fonts, radius, spacing } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
+import { showAlert } from '@/lib/alert';
 
 // 'HH:MM' <-> Date (tylko godzina)
 const hmToDate = (hm: string) => {
@@ -83,7 +84,7 @@ export default function SlotForm() {
 
   const remove = () => {
     if (!existing) return;
-    Alert.alert('Usunąć z grafiku?', 'Termin zniknie z grafiku od dziś. Minione lekcje zostaną w historii.', [
+    showAlert('Usunąć z grafiku?', 'Termin zniknie z grafiku od dziś. Minione lekcje zostaną w historii.', [
       { text: 'Anuluj', style: 'cancel' },
       {
         text: 'Usuń',

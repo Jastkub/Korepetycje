@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { Card, Header, Pill, PrimaryButton, Screen, SectionLabel, text } from '@/components/ui';
 import { type AttendanceStatus } from '@/data/mock';
@@ -8,6 +8,7 @@ import { dayMonth, weekday } from '@/lib/dates';
 import { useApp } from '@/store/AppStore';
 import { radius, spacing } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
+import { showAlert } from '@/lib/alert';
 
 const OPTIONS: { key: AttendanceStatus; emoji: string; label: string }[] = [
   { key: 'present', emoji: '✓', label: 'Był(a)' },
@@ -25,7 +26,7 @@ export default function LessonScreen() {
   const lesson = getLesson(id);
 
   const remove = () => {
-    Alert.alert('Usunąć lekcję?', 'Tej lekcji nie będzie już w grafiku.', [
+    showAlert('Usunąć lekcję?', 'Tej lekcji nie będzie już w grafiku.', [
       { text: 'Anuluj', style: 'cancel' },
       { text: 'Usuń', style: 'destructive', onPress: () => { deleteLesson(id); router.back(); } },
     ]);

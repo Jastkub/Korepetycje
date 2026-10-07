@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { type AttendanceStatus, type Day, type Homework, type Lesson, type Slot, type Student } from '@/data/mock';
 import { addDays, todayISO, weekday } from '@/lib/dates';
@@ -7,6 +7,7 @@ import { syncReminders } from '@/lib/notifications';
 import { buildLessons, parseVirtualId, slotIsCurrent } from '@/lib/schedule';
 import { supabase } from '@/lib/supabase';
 import { useColors } from '@/theme/useTheme';
+import { showAlert } from '@/lib/alert';
 
 /**
  * MAGAZYN DANYCH — chmura (Supabase).
@@ -134,7 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supabase.from('slots').select('*').order('start_time'),
     ]);
     if (sl.error) {
-      Alert.alert(
+      showAlert(
         'Brak tabeli grafiku',
         'Uruchom w Supabase (SQL Editor) plik supabase/migracja-grafik-tygodniowy.sql.\n\n' + sl.error.message,
       );
@@ -159,7 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Jeśli był błąd — pokaż komunikat i zwróć true (znaczy: „był błąd").
   const failed = (error: { message: string } | null): boolean => {
     if (error) {
-      Alert.alert('Nie udało się zapisać', error.message);
+      showAlert('Nie udało się zapisać', error.message);
       return true;
     }
     return false;
