@@ -59,9 +59,11 @@ export default function LessonScreen() {
         eyebrow={`${weekday(lesson.date)} ${dayMonth(lesson.date)} · ${lesson.start}–${lesson.end}`}
         title={`Lekcja · ${lesson.name}`}
         right={
-          <Pressable onPress={() => router.push(`/dodaj-lekcje?id=${id}`)} hitSlop={8}>
-            <Text style={[t.mono, { color: c.accent, fontSize: 11 }]}>Edytuj</Text>
-          </Pressable>
+          lesson.slotId ? (
+            <Pressable onPress={() => router.push(`/dodaj-lekcje?slot=${lesson.slotId}`)} hitSlop={8}>
+              <Text style={[t.mono, { color: c.accent, fontSize: 11 }]}>Termin w grafiku</Text>
+            </Pressable>
+          ) : undefined
         }
       />
 
@@ -132,9 +134,12 @@ export default function LessonScreen() {
 
       <PrimaryButton label="Zapisz lekcję" onPress={save} loading={busy} />
 
-      <Pressable onPress={remove} style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
-        <Text style={{ color: c.rose, fontWeight: '600', fontSize: 14 }}>Usuń lekcję</Text>
-      </Pressable>
+      {/* Lekcje z grafiku się nie usuwa — można je oznaczyć jako „Odwołane". */}
+      {!lesson.slotId && (
+        <Pressable onPress={remove} style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
+          <Text style={{ color: c.rose, fontWeight: '600', fontSize: 14 }}>Usuń lekcję</Text>
+        </Pressable>
+      )}
     </Screen>
   );
 }

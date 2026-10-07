@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, View } from 'react-native';
 
-import { type AttendanceStatus, type Homework, type Lesson, type Student } from '@/data/mock';
-import { weekday } from '@/lib/dates';
+import { type AttendanceStatus, type Day, type Homework, type Lesson, type Slot, type Student } from '@/data/mock';
+import { addDays, todayISO, weekday } from '@/lib/dates';
 import { syncReminders } from '@/lib/notifications';
+import { buildLessons, parseVirtualId, slotIsCurrent } from '@/lib/schedule';
 import { supabase } from '@/lib/supabase';
 import { useColors } from '@/theme/useTheme';
 
@@ -25,20 +26,27 @@ export type NewStudent = {
   color: string; // hex
 };
 
-type AppData = { students: Student[]; lessons: Lesson[] };
+export type SlotInput = { studentId: string; day: Day; start: string; end: string };
+
+type AppData = { students: Student[]; slots: Slot[]; lessons: Lesson[] };
 
 type AppContextValue = {
   students: Student[];
+  /** Stałe terminy w aktualnym grafiku tygodniowym. */
+  slots: Slot[];
+  /** Lekcje z datami: zapisane w bazie + wyliczone z grafiku. */
   lessons: Lesson[];
   refresh: () => Promise<void>;
   getStudent: (id: string) => Student | undefined;
   getLesson: (id: string) => Lesson | undefined;
+  getSlot: (id: string) => Slot | undefined;
   addStudent: (input: NewStudent) => Promise<boolean>;
   updateStudent: (id: string, input: NewStudent) => Promise<boolean>;
   deleteStudent: (id: string) => Promise<boolean>;
-  addLessons: (studentId: string, dates: string[], start: string, end: string) => Promise<boolean>;
-  updateLesson: (id: string, patch: { date: string; start: string; end: string }) => Promise<boolean>;
-  updateLessonsBulk: (updates: { id: string; date: string; start: string; end: string }[]) => Promise<boolean>;
+  addSlot: (input: SlotInput) => Promise<boolean>;
+  updateSlot: (id: string, input: SlotInput) => Promise<boolean>;
+  removeSlot: (id: string) => Promise<boolean>;
+  updateLesson: (id: string, patch: { status?: AttendanceStatus; paid?: boolean; note?: string }) => Promise<boolean>;
   deleteLesson: (id: string) => Promise<boolean>;
   setAttendance: (lessonId: string, status: AttendanceStatus, note?: string) => Promise<boolean>;
   setPaid: (lessonId: string, paid: boolean) => Promise<boolean>;
@@ -80,10 +88,23 @@ function mapStudent(row: any, homeworkRows: any[]): Student {
   };
 }
 
+function mapSlot(row: any): Slot {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    day: row.day,
+    start: row.start_time,
+    end: row.end_time,
+    validFrom: row.valid_from,
+    validTo: row.valid_to ?? null,
+  };
+}
+
 function mapLesson(row: any, student?: Student): Lesson {
   return {
     id: row.id,
     studentId: row.student_id,
+    slotId: row.slot_id ?? null,
     name: student?.name ?? '—',
     subject: student?.subject ?? '',
     grade: student ? 'kl. ' + student.grade : '',
@@ -99,22 +120,34 @@ function mapLesson(row: any, student?: Student): Lesson {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>({ students: [], lessons: [] });
+  const [data, setData] = useState<AppData>({ students: [], slots: [], lessons: [] });
+  // Wszystkie terminy, łącznie z zakończonymi (potrzebne do historii).
+  const [allSlots, setAllSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
   const c = useColors();
 
   const refresh = useCallback(async () => {
-    const [s, l, h] = await Promise.all([
+    const [s, l, h, sl] = await Promise.all([
       supabase.from('students').select('*').order('created_at'),
       supabase.from('lessons').select('*').order('created_at'),
       supabase.from('homework').select('*').order('created_at'),
+      supabase.from('slots').select('*').order('start_time'),
     ]);
+    if (sl.error) {
+      Alert.alert(
+        'Brak tabeli grafiku',
+        'Uruchom w Supabase (SQL Editor) plik supabase/migracja-grafik-tygodniowy.sql.\n\n' + sl.error.message,
+      );
+    }
     const hRows = h.data ?? [];
     const students = (s.data ?? []).map((row) => mapStudent(row, hRows));
     const byId: Record<string, Student> = {};
     students.forEach((st) => (byId[st.id] = st));
-    const lessons = (l.data ?? []).map((row) => mapLesson(row, byId[row.student_id]));
-    setData({ students, lessons });
+    const records = (l.data ?? []).map((row) => mapLesson(row, byId[row.student_id]));
+    const slotsAll = (sl.data ?? []).map(mapSlot);
+    const lessons = buildLessons(slotsAll, records, students);
+    setAllSlots(slotsAll);
+    setData({ students, slots: slotsAll.filter((x) => slotIsCurrent(x)), lessons });
     // Odśwież zaplanowane przypomnienia zgodnie z aktualnymi lekcjami.
     syncReminders(lessons);
   }, []);
@@ -174,84 +207,125 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  // Tworzy po jednej lekcji dla każdej daty z listy (obsługuje cykliczność).
-  const addLessons = async (studentId: string, dates: string[], start: string, end: string) => {
-    const student = data.students.find((s) => s.id === studentId);
-    if (!student || dates.length === 0) return false;
-    const rows = dates.map((d) => ({
-      student_id: student.id,
-      date: d,
-      day: weekday(d),
-      start_time: start.trim(),
-      end_time: end.trim(),
-      status: 'planned',
-      rate: student.rate,
-      paid: false,
-    }));
-    const { error } = await supabase.from('lessons').insert(rows);
+  /* ---------- Grafik tygodniowy (stałe terminy) ---------- */
+
+  const addSlot = async (input: SlotInput) => {
+    const { error } = await supabase.from('slots').insert({
+      student_id: input.studentId,
+      day: input.day,
+      start_time: input.start.trim(),
+      end_time: input.end.trim(),
+      valid_from: todayISO(),
+    });
     if (failed(error)) return false;
     await refresh();
     return true;
   };
 
-  const updateLesson = async (id: string, patch: { date: string; start: string; end: string }) => {
-    const { error } = await supabase
+  // Kończy termin na wczoraj (historia zostaje) i sprząta jego puste
+  // przyszłe lekcje. Termin dodany dziś po prostu usuwamy.
+  const endSlot = async (slot: Slot) => {
+    const today = todayISO();
+    const { error: cleanErr } = await supabase
       .from('lessons')
-      .update({
-        date: patch.date,
-        day: weekday(patch.date),
-        start_time: patch.start.trim(),
-        end_time: patch.end.trim(),
-      })
-      .eq('id', id);
-    if (failed(error)) return false;
-    await refresh();
-    return true;
+      .delete()
+      .eq('slot_id', slot.id)
+      .gte('date', today)
+      .eq('status', 'planned')
+      .eq('paid', false);
+    if (failed(cleanErr)) return false;
+    const { error } =
+      slot.validFrom >= today
+        ? await supabase.from('slots').delete().eq('id', slot.id)
+        : await supabase.from('slots').update({ valid_to: addDays(today, -1) }).eq('id', slot.id);
+    return !failed(error);
   };
 
-  // Zbiorcza zmiana wielu lekcji (np. przeniesienie całego stałego terminu).
-  const updateLessonsBulk = async (updates: { id: string; date: string; start: string; end: string }[]) => {
-    if (updates.length === 0) return false;
-    const results = await Promise.all(
-      updates.map((u) =>
-        supabase
-          .from('lessons')
-          .update({ date: u.date, day: weekday(u.date), start_time: u.start.trim(), end_time: u.end.trim() })
-          .eq('id', u.id),
-      ),
-    );
-    const bad = results.find((r) => r.error);
-    if (bad && failed(bad.error)) return false;
+  // Zmiana terminu działa od dziś: stary kończy się wczoraj, nowy zaczyna dziś.
+  // Dzięki temu minione lekcje zostają w starym dniu i godzinie.
+  const updateSlot = async (id: string, input: SlotInput) => {
+    const slot = allSlots.find((x) => x.id === id);
+    if (!slot) return false;
+    if (slot.validFrom >= todayISO()) {
+      const { error } = await supabase
+        .from('slots')
+        .update({ student_id: input.studentId, day: input.day, start_time: input.start.trim(), end_time: input.end.trim() })
+        .eq('id', id);
+      if (failed(error)) return false;
+      await refresh();
+      return true;
+    }
+    if (!(await endSlot(slot))) return false;
+    return addSlot(input);
+  };
+
+  const removeSlot = async (id: string) => {
+    const slot = allSlots.find((x) => x.id === id);
+    if (!slot) return false;
+    const ok = await endSlot(slot);
     await refresh();
-    return true;
+    return ok;
+  };
+
+  /* ---------- Pojedyncze lekcje ---------- */
+
+  // Lekcje w trakcie zapisu — chroni przed podwójnym wstawieniem tej samej
+  // wirtualnej lekcji przy szybkim podwójnym kliknięciu.
+  const saving = useRef(new Set<string>());
+
+  const findLesson = (id: string): Lesson | undefined => {
+    const direct = data.lessons.find((l) => l.id === id);
+    if (direct) return direct;
+    // Wirtualna lekcja mogła już zostać zapisana — szukamy po terminie i dacie.
+    const v = parseVirtualId(id);
+    return v ? data.lessons.find((l) => l.slotId === v.slotId && l.date === v.date) : undefined;
+  };
+
+  // Zapisuje zmianę lekcji. Wirtualną (z grafiku) najpierw wstawia do bazy.
+  const saveLesson = async (id: string, patch: { status?: AttendanceStatus; paid?: boolean; note?: string }) => {
+    const lesson = findLesson(id);
+    if (!lesson || saving.current.has(lesson.id)) return false;
+    saving.current.add(lesson.id);
+    try {
+      let error;
+      if (lesson.virtual) {
+        ({ error } = await supabase.from('lessons').insert({
+          student_id: lesson.studentId,
+          slot_id: lesson.slotId,
+          date: lesson.date,
+          day: lesson.day,
+          start_time: lesson.start,
+          end_time: lesson.end,
+          // Zaznaczenie opłaty oznacza, że lekcja się odbyła.
+          status: patch.status ?? (patch.paid !== undefined ? 'present' : 'planned'),
+          paid: patch.paid ?? false,
+          note: patch.note ?? '',
+          rate: lesson.rate,
+        }));
+      } else {
+        ({ error } = await supabase.from('lessons').update(patch).eq('id', lesson.id));
+      }
+      if (failed(error)) return false;
+      await refresh();
+      return true;
+    } finally {
+      saving.current.delete(lesson.id);
+    }
   };
 
   const deleteLesson = async (id: string) => {
-    const { error } = await supabase.from('lessons').delete().eq('id', id);
+    const lesson = findLesson(id);
+    if (!lesson || lesson.virtual) return false;
+    const { error } = await supabase.from('lessons').delete().eq('id', lesson.id);
     if (failed(error)) return false;
     await refresh();
     return true;
   };
 
-  const setAttendance = async (lessonId: string, status: AttendanceStatus, note?: string) => {
-    const lesson = data.lessons.find((l) => l.id === lessonId);
-    if (!lesson) return false;
-    const { error } = await supabase
-      .from('lessons')
-      .update({ status, note: note ?? lesson.note })
-      .eq('id', lessonId);
-    if (failed(error)) return false;
-    // Licznik spotkań i frekwencja liczą się z historii lekcji (patrz lib/stats.ts).
-    await refresh();
-    return true;
-  };
+  const setAttendance = (lessonId: string, status: AttendanceStatus, note?: string) =>
+    saveLesson(lessonId, note === undefined ? { status } : { status, note });
 
-  const setPaid = async (lessonId: string, paid: boolean) => {
-    const { error } = await supabase.from('lessons').update({ paid }).eq('id', lessonId);
-    if (failed(error)) return false;
-    await refresh();
-    return true;
-  };
+  const setPaid = (lessonId: string, paid: boolean) => saveLesson(lessonId, { paid });
 
   const toggleHomework = async (studentId: string, homeworkId: string) => {
     const student = data.students.find((s) => s.id === studentId);
@@ -292,16 +366,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextValue = {
     students: data.students,
+    slots: data.slots,
     lessons: data.lessons,
     refresh,
     getStudent: (id) => data.students.find((s) => s.id === id),
-    getLesson: (id) => data.lessons.find((l) => l.id === id),
+    getLesson: findLesson,
+    getSlot: (id) => allSlots.find((x) => x.id === id),
     addStudent,
     updateStudent,
     deleteStudent,
-    addLessons,
-    updateLesson,
-    updateLessonsBulk,
+    addSlot,
+    updateSlot,
+    removeSlot,
+    updateLesson: saveLesson,
     deleteLesson,
     setAttendance,
     setPaid,

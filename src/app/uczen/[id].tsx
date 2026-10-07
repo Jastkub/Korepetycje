@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Pressable, Share, Text, TextInput, View } from 'react-native';
 
 import { Card, Header, Progress, Screen, SectionLabel, STATUS_LABEL, statusTone, text } from '@/components/ui';
-import { dayMonth, weekday } from '@/lib/dates';
+import { dayMonth, todayISO, weekday } from '@/lib/dates';
+import { DAY_NAME, WEEK } from '@/lib/schedule';
 import { studentStats } from '@/lib/stats';
 import { useApp } from '@/store/AppStore';
 import { studentTone } from '@/theme/studentColors';
@@ -16,10 +17,15 @@ export default function StudentProfile() {
   const t = text(c);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { getStudent, lessons, toggleHomework, addHomework, deleteHomework, setMaterialProgress } = useApp();
+  const { getStudent, lessons, slots, toggleHomework, addHomework, deleteHomework, setMaterialProgress } = useApp();
   const student = getStudent(id);
+  const today = todayISO();
+  const studentSlots = slots
+    .filter((x) => x.studentId === id)
+    .sort((a, b) => WEEK.indexOf(a.day) - WEEK.indexOf(b.day) || a.start.localeCompare(b.start));
+  // Historia: lekcje do dziś (przyszłe wynikają z grafiku).
   const studentLessons = lessons
-    .filter((l) => l.studentId === id)
+    .filter((l) => l.studentId === id && l.date <= today)
     .sort((a, b) => b.date.localeCompare(a.date) || b.start.localeCompare(a.start));
 
   // Pola nowej pracy domowej (treść + termin).
@@ -192,10 +198,33 @@ export default function StudentProfile() {
         </View>
       </Card>
 
+      <SectionLabel
+        right={
+          <Pressable onPress={() => router.push('/dodaj-lekcje')} hitSlop={8}>
+            <Ionicons name="add-circle-outline" size={18} color={accent} />
+          </Pressable>
+        }>
+        STAŁE TERMINY
+      </SectionLabel>
+      <Card>
+        {studentSlots.length === 0 && (
+          <Text style={{ color: c.inkFaint, fontSize: 13 }}>Brak terminu w grafiku tygodniowym.</Text>
+        )}
+        {studentSlots.map((x, i) => (
+          <Pressable
+            key={x.id}
+            onPress={() => router.push(`/dodaj-lekcje?slot=${x.id}`)}
+            style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.lineSoft }}>
+            <Text style={{ color: c.ink, fontSize: 13.5, fontWeight: '600' }}>{DAY_NAME[x.day]}</Text>
+            <Text style={{ color: c.inkSoft, fontSize: 13.5, fontFamily: fonts.mono }}>{x.start}–{x.end}</Text>
+          </Pressable>
+        ))}
+      </Card>
+
       <SectionLabel>HISTORIA LEKCJI</SectionLabel>
       <Card>
         {studentLessons.length === 0 && (
-          <Text style={{ color: c.inkFaint, fontSize: 13 }}>Brak lekcji w grafiku.</Text>
+          <Text style={{ color: c.inkFaint, fontSize: 13 }}>Brak minionych lekcji.</Text>
         )}
         {studentLessons.map((l, i) => {
           const st = statusTone(c, l.status);

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
+import { pendingLessons } from '@/lib/schedule';
+import { useApp } from '@/store/AppStore';
 import { fonts } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
 
@@ -10,6 +12,8 @@ import { useColors } from '@/theme/useTheme';
  */
 export default function TabsLayout() {
   const c = useColors();
+  const { lessons } = useApp();
+  const pending = pendingLessons(lessons).length;
   return (
     <Tabs
       screenOptions={{
@@ -35,6 +39,15 @@ export default function TabsLayout() {
         options={{
           title: 'Grafik',
           tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="minione"
+        options={{
+          title: 'Minione',
+          tabBarBadge: pending > 0 ? pending : undefined,
+          tabBarBadgeStyle: { backgroundColor: c.accent, fontSize: 10 },
+          tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
