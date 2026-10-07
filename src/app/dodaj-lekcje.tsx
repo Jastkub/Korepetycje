@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Avatar, PrimaryButton, Screen, text } from '@/components/ui';
 import { type Day } from '@/data/mock';
@@ -25,6 +25,9 @@ const toMin = (hm: string) => {
   const [h, m] = hm.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
 };
+// Do wyszukiwania: małe litery, bez polskich znaków („ś" = „s").
+const norm = (x: string) =>
+  x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');
 const validHm = (hm: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(hm.trim());
 
 /**
@@ -47,6 +50,7 @@ export default function SlotForm() {
   const [start, setStart] = useState(existing?.start ?? '15:00');
   const [end, setEnd] = useState(existing?.end ?? '16:00');
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
   // Tylko jedna rolka otwarta naraz.
   const [picker, setPicker] = useState<'start' | 'end' | null>(null);
 
@@ -92,6 +96,10 @@ export default function SlotForm() {
   };
 
   const editedStudent = existing ? getStudent(existing.studentId) : undefined;
+  const q = norm(query.trim());
+  const found = q
+    ? students.filter((s) => norm(`${s.name} ${s.subject} ${s.grade}`).includes(q))
+    : students;
 
   return (
     <Screen>
@@ -119,12 +127,32 @@ export default function SlotForm() {
         </Text>
       ) : (
         <View style={{ gap: spacing.sm, marginBottom: spacing.lg }}>
-          {students.map((s) => {
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, height: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: c.line, backgroundColor: c.card }}>
+            <Ionicons name="search" size={17} color={c.inkFaint} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Szukaj ucznia…"
+              placeholderTextColor={c.inkFaint}
+              autoCorrect={false}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+              returnKeyType="search"
+              style={{ flex: 1, minWidth: 0, fontSize: 15, color: c.ink }}
+            />
+          </View>
+          {found.length === 0 && (
+            <Text style={{ color: c.inkFaint, fontSize: 13, paddingVertical: spacing.sm }}>Brak ucznia „{query.trim()}".</Text>
+          )}
+          {found.map((s) => {
             const on = studentId === s.id;
             return (
               <Pressable
                 key={s.id}
-                onPress={() => setStudentId(s.id)}
+                onPress={() => {
+                  setStudentId(s.id);
+                  Keyboard.dismiss();
+                }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.sm + 2, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: on ? c.accentSoft : c.card, borderColor: on ? c.accent : c.line }}>
                 <Avatar student={s} size={34} />
                 <Text style={{ flex: 1, fontWeight: '700', fontSize: 14.5, color: c.ink }} numberOfLines={1}>{s.name}</Text>
