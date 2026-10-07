@@ -30,7 +30,7 @@ export default function MoreScreen() {
       <Card onPress={() => router.push('/statystyki')}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <Ionicons name="stats-chart-outline" size={22} color={c.accent} />
-          <Text style={[t.body, { flex: 1 }]}>Statystyki i rozliczenia</Text>
+          <Text style={[t.body, { flex: 1 }]}>Statystyki i przychód</Text>
           <Ionicons name="chevron-forward" size={20} color={c.inkFaint} />
         </View>
       </Card>

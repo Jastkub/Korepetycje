@@ -214,15 +214,6 @@ export function Avatar({ student, size = 40 }: { student: Student; size?: number
 }
 
 /** Pasek postępu 0–100. */
-export function Progress({ value, color }: { value: number; color?: string }) {
-  const c = useColors();
-  return (
-    <View style={{ height: 7, borderRadius: radius.pill, backgroundColor: c.line, overflow: 'hidden', marginTop: spacing.sm }}>
-      <View style={{ height: '100%', width: `${value}%`, backgroundColor: color ?? c.accent, borderRadius: radius.pill }} />
-    </View>
-  );
-}
-
 /** Duży przycisk akcji. Gdy `loading` — pokazuje kręciołek i blokuje kliknięcie. */
 export function PrimaryButton({
   label,

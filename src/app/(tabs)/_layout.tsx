@@ -42,19 +42,12 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="minione"
-        options={{
-          title: 'Minione',
-          tabBarBadge: pending > 0 ? pending : undefined,
-          tabBarBadgeStyle: { backgroundColor: c.accent, fontSize: 10 },
-          tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="platnosci"
         options={{
-          title: 'Do zapłaty',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" size={size} color={color} />,
+          title: 'Rozliczenia',
+          tabBarBadge: pending > 0 ? pending : undefined,
+          tabBarBadgeStyle: { backgroundColor: c.accent, fontSize: 10 },
+          tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

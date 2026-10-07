@@ -39,19 +39,22 @@ export default function SlotForm() {
   const c = useColors();
   const t = text(c);
   const router = useRouter();
-  const params = useLocalSearchParams<{ slot?: string; day?: string }>();
-  const { students, getSlot, getStudent, addSlot, updateSlot, removeSlot } = useApp();
+  const params = useLocalSearchParams<{ slot?: string; day?: string; student?: string }>();
+  const { students, slots, getSlot, getStudent, addSlot, updateSlot, removeSlot } = useApp();
 
   const existing = params.slot ? getSlot(params.slot) : undefined;
   const editing = !!existing;
   const presetDay = WEEK.includes(params.day as Day) ? (params.day as Day) : weekday(todayISO());
 
-  const [studentId, setStudentId] = useState(existing?.studentId ?? students[0]?.id ?? '');
+  const presetStudent = params.student && getStudent(params.student) ? params.student : undefined;
+  const [studentId, setStudentId] = useState(existing?.studentId ?? presetStudent ?? '');
   const [day, setDay] = useState<Day>(existing?.day ?? presetDay);
   const [start, setStart] = useState(existing?.start ?? '15:00');
   const [end, setEnd] = useState(existing?.end ?? '16:00');
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState('');
+  // Lista uczniów zwija się po wyborze — zostaje tylko wybrany + „Zmień".
+  const [picking, setPicking] = useState(!existing && !presetStudent);
   // Tylko jedna rolka otwarta naraz.
   const [picker, setPicker] = useState<'start' | 'end' | null>(null);
 
@@ -72,6 +75,13 @@ export default function SlotForm() {
 
   const timesOk = validHm(start) && validHm(end) && toMin(end) > toMin(start);
   const canSave = !!studentId && timesOk;
+
+  // Inne terminy tego dnia, które nachodzą na wybrane godziny.
+  const clashes = timesOk
+    ? slots.filter(
+        (x) => x.id !== existing?.id && x.day === day && toMin(x.start) < toMin(end) && toMin(start) < toMin(x.end),
+      )
+    : [];
 
   const save = async () => {
     if (!canSave) return;
@@ -97,6 +107,7 @@ export default function SlotForm() {
   };
 
   const editedStudent = existing ? getStudent(existing.studentId) : undefined;
+  const picked = !editing && !picking ? getStudent(studentId) : undefined;
   const q = norm(query.trim());
   const found = q
     ? students.filter((s) => norm(`${s.name} ${s.subject} ${s.grade}`).includes(q))
@@ -122,6 +133,17 @@ export default function SlotForm() {
           {editedStudent && <Avatar student={editedStudent} size={34} />}
           <Text style={{ flex: 1, fontWeight: '700', fontSize: 14.5, color: c.ink }}>{editedStudent?.name ?? '—'}</Text>
         </View>
+      ) : picked ? (
+        <Pressable
+          onPress={() => setPicking(true)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.sm + 2, borderRadius: radius.md, borderWidth: 1.5, borderColor: c.accent, backgroundColor: c.accentSoft, marginBottom: spacing.lg }}>
+          <Avatar student={picked} size={34} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '700', fontSize: 14.5, color: c.ink }} numberOfLines={1}>{picked.name}</Text>
+            <Text style={t.soft} numberOfLines={1}>{picked.subject} · {picked.grade}</Text>
+          </View>
+          <Text style={{ fontFamily: fonts.mono, fontSize: 11.5, color: c.accent }}>Zmień</Text>
+        </Pressable>
       ) : students.length === 0 ? (
         <Text style={{ color: c.inkFaint, fontSize: 13, marginBottom: spacing.md }}>
           Najpierw dodaj ucznia w zakładce „Uczniowie".
@@ -152,6 +174,8 @@ export default function SlotForm() {
                 key={s.id}
                 onPress={() => {
                   setStudentId(s.id);
+                  setPicking(false);
+                  setQuery('');
                   Keyboard.dismiss();
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.sm + 2, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: on ? c.accentSoft : c.card, borderColor: on ? c.accent : c.line }}>
@@ -198,6 +222,14 @@ export default function SlotForm() {
           ? `Co tydzień: ${DAY_NAME[day].toLowerCase()}, ${start}–${end}.`
           : 'Godzina końca musi być późniejsza niż początku.'}
       </Text>
+      {clashes.map((x) => (
+        <Text key={x.id} style={[t.soft, { color: c.amber, marginTop: 4 }]}>
+          ⚠ Nachodzi na: {getStudent(x.studentId)?.name ?? '—'} {x.start}–{x.end}
+        </Text>
+      ))}
+      {!studentId && !editing && students.length > 0 && (
+        <Text style={[t.soft, { color: c.rose, marginTop: 4 }]}>Wybierz ucznia z listy.</Text>
+      )}
 
       <View style={{ height: spacing.lg }} />
       <PrimaryButton label={editing ? 'Zapisz zmiany' : 'Dodaj do grafiku'} onPress={save} loading={busy} />

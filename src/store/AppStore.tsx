@@ -27,6 +27,8 @@ export type NewStudent = {
   color: string; // hex
 };
 
+export type LessonPatch = { status?: AttendanceStatus; paid?: boolean; note?: string };
+
 export type SlotInput = { studentId: string; day: Day; start: string; end: string };
 
 type AppData = { students: Student[]; slots: Slot[]; lessons: Lesson[] };
@@ -41,20 +43,22 @@ type AppContextValue = {
   getStudent: (id: string) => Student | undefined;
   getLesson: (id: string) => Lesson | undefined;
   getSlot: (id: string) => Slot | undefined;
-  addStudent: (input: NewStudent) => Promise<boolean>;
+  /** Zwraca id nowego ucznia albo null przy błędzie. */
+  addStudent: (input: NewStudent) => Promise<string | null>;
   updateStudent: (id: string, input: NewStudent) => Promise<boolean>;
   deleteStudent: (id: string) => Promise<boolean>;
   addSlot: (input: SlotInput) => Promise<boolean>;
   updateSlot: (id: string, input: SlotInput) => Promise<boolean>;
   removeSlot: (id: string) => Promise<boolean>;
-  updateLesson: (id: string, patch: { status?: AttendanceStatus; paid?: boolean; note?: string }) => Promise<boolean>;
+  updateLesson: (id: string, patch: LessonPatch) => Promise<boolean>;
+  /** Ta sama zmiana dla wielu lekcji naraz (np. „rozlicz wszystko"). */
+  updateLessons: (ids: string[], patch: LessonPatch) => Promise<boolean>;
   deleteLesson: (id: string) => Promise<boolean>;
   setAttendance: (lessonId: string, status: AttendanceStatus, note?: string) => Promise<boolean>;
   setPaid: (lessonId: string, paid: boolean) => Promise<boolean>;
   toggleHomework: (studentId: string, homeworkId: string) => Promise<boolean>;
   addHomework: (studentId: string, text: string, due: string) => Promise<boolean>;
   deleteHomework: (studentId: string, homeworkId: string) => Promise<boolean>;
-  setMaterialProgress: (studentId: string, progress: number) => Promise<boolean>;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -167,7 +171,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addStudent = async (input: NewStudent) => {
-    const { error } = await supabase.from('students').insert({
+    const { data: row, error } = await supabase.from('students').insert({
       name: input.name.trim() || 'Nowy uczeń',
       initials: initialsFrom(input.name),
       color: input.color,
@@ -176,10 +180,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rate: input.rate,
       contact: input.contact.trim(),
       material_title: input.material.trim() || '—',
-    });
-    if (failed(error)) return false;
+    }).select('id').single();
+    if (failed(error)) return null;
     await refresh();
-    return true;
+    return (row?.id as string) ?? null;
   };
 
   const updateStudent = async (id: string, input: NewStudent) => {
@@ -282,37 +286,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return v ? data.lessons.find((l) => l.slotId === v.slotId && l.date === v.date) : undefined;
   };
 
-  // Zapisuje zmianę lekcji. Wirtualną (z grafiku) najpierw wstawia do bazy.
-  const saveLesson = async (id: string, patch: { status?: AttendanceStatus; paid?: boolean; note?: string }) => {
-    const lesson = findLesson(id);
-    if (!lesson || saving.current.has(lesson.id)) return false;
-    saving.current.add(lesson.id);
+  // Zapisuje zmianę jednej lub wielu lekcji. Wirtualne (z grafiku) wstawia do bazy.
+  // Ekran zmienia się od razu (zanim baza odpowie), żeby aplikacja była szybka;
+  // przy błędzie `refresh` przywraca stan z bazy.
+  const saveLessons = async (ids: string[], patch: LessonPatch) => {
+    const list = ids.map(findLesson).filter((l): l is Lesson => !!l && !saving.current.has(l.id));
+    if (list.length === 0) return false;
+    list.forEach((l) => saving.current.add(l.id));
+
+    // Zaznaczenie opłaty oznacza, że lekcja się odbyła.
+    const statusFor = (l: Lesson) => patch.status ?? (patch.paid !== undefined && l.status === 'planned' ? 'present' : l.status);
+    const touched = new Set(list.map((l) => l.id));
+    setData((prev) => ({
+      ...prev,
+      lessons: prev.lessons.map((l) => (touched.has(l.id) ? { ...l, ...patch, status: statusFor(l) } : l)),
+    }));
+
     try {
-      let error;
-      if (lesson.virtual) {
-        ({ error } = await supabase.from('lessons').insert({
-          student_id: lesson.studentId,
-          slot_id: lesson.slotId,
-          date: lesson.date,
-          day: lesson.day,
-          start_time: lesson.start,
-          end_time: lesson.end,
-          // Zaznaczenie opłaty oznacza, że lekcja się odbyła.
-          status: patch.status ?? (patch.paid !== undefined ? 'present' : 'planned'),
-          paid: patch.paid ?? false,
-          note: patch.note ?? '',
-          rate: lesson.rate,
-        }));
-      } else {
-        ({ error } = await supabase.from('lessons').update(patch).eq('id', lesson.id));
-      }
-      if (failed(error)) return false;
+      const virtual = list.filter((l) => l.virtual);
+      const real = list.filter((l) => !l.virtual);
+      const results = await Promise.all([
+        virtual.length
+          ? supabase.from('lessons').insert(
+              virtual.map((l) => ({
+                student_id: l.studentId,
+                slot_id: l.slotId,
+                date: l.date,
+                day: l.day,
+                start_time: l.start,
+                end_time: l.end,
+                status: statusFor(l),
+                paid: patch.paid ?? false,
+                note: patch.note ?? '',
+                rate: l.rate,
+              })),
+            )
+          : null,
+        ...real.map((l) =>
+          supabase.from('lessons').update({ ...patch, status: statusFor(l) }).eq('id', l.id),
+        ),
+      ]);
+      const bad = results.find((r) => r?.error);
       await refresh();
-      return true;
+      return !failed(bad?.error ?? null);
     } finally {
-      saving.current.delete(lesson.id);
+      list.forEach((l) => saving.current.delete(l.id));
     }
   };
+
+  const saveLesson = (id: string, patch: LessonPatch) => saveLessons([id], patch);
 
   const deleteLesson = async (id: string) => {
     const lesson = findLesson(id);
@@ -357,14 +379,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const setMaterialProgress = async (studentId: string, progress: number) => {
-    const clamped = Math.max(0, Math.min(100, progress));
-    const { error } = await supabase.from('students').update({ material_progress: clamped }).eq('id', studentId);
-    if (failed(error)) return false;
-    await refresh();
-    return true;
-  };
-
   const value: AppContextValue = {
     students: data.students,
     slots: data.slots,
@@ -380,13 +394,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateSlot,
     removeSlot,
     updateLesson: saveLesson,
+    updateLessons: saveLessons,
     deleteLesson,
     setAttendance,
     setPaid,
     toggleHomework,
     addHomework,
     deleteHomework,
-    setMaterialProgress,
   };
 
   if (loading) {
