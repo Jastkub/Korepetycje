@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { PrimaryButton, Screen, text } from '@/components/ui';
 import { SUBJECTS } from '@/data/mock';
@@ -9,6 +9,7 @@ import { useApp } from '@/store/AppStore';
 import { DEFAULT_STUDENT_COLOR, PALETTES, studentTone } from '@/theme/studentColors';
 import { fonts, radius, spacing } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
+import { showAlert } from '@/lib/alert';
 
 // 3 najczęstsze przedmioty pokazywane od razu; reszta pod „…".
 const TOP_SUBJECTS = ['Matematyka', 'Język angielski', 'Fizyka'];
@@ -34,9 +35,6 @@ export default function StudentForm() {
   const [subject, setSubject] = useState(existing?.subject ?? 'Matematyka');
   const [rate, setRate] = useState(existing ? String(existing.rate) : '');
   const [contact, setContact] = useState(existing?.contact ?? '');
-  const [material, setMaterial] = useState(
-    existing && existing.materialTitle !== '—' ? existing.materialTitle : '',
-  );
   const [color, setColor] = useState<string>(existing?.color ?? DEFAULT_STUDENT_COLOR);
   const [showAllSubjects, setShowAllSubjects] = useState(false);
   const [showPalettes, setShowPalettes] = useState(false);
@@ -51,18 +49,25 @@ export default function StudentForm() {
       subject,
       rate: toNumber(rate),
       contact,
-      material,
+      material: existing?.materialTitle === '—' ? '' : existing?.materialTitle ?? '',
       color,
     };
     setBusy(true);
-    const ok = editing && id ? await updateStudent(id, input) : await addStudent(input);
+    if (editing && id) {
+      const ok = await updateStudent(id, input);
+      setBusy(false);
+      if (ok) router.back();
+      return;
+    }
+    const newId = await addStudent(input);
     setBusy(false);
-    if (ok) router.back();
+    // Nowy uczeń → od razu wybór stałego terminu w grafiku.
+    if (newId) router.replace(`/dodaj-lekcje?student=${newId}`);
   };
 
   const remove = () => {
     if (!id) return;
-    Alert.alert('Usunąć ucznia?', `„${existing?.name ?? ''}" i jego lekcje zostaną usunięte.`, [
+    showAlert('Usunąć ucznia?', `„${existing?.name ?? ''}" i jego lekcje zostaną usunięte.`, [
       { text: 'Anuluj', style: 'cancel' },
       {
         text: 'Usuń',
@@ -150,10 +155,6 @@ export default function StudentForm() {
         <Input value={contact} onChangeText={setContact} placeholder="Telefon do rodzica…" keyboardType="phone-pad" />
       </Field>
 
-      <Field label="Materiał / dział">
-        <Input value={material} onChangeText={setMaterial} placeholder="np. Funkcje kwadratowe" />
-      </Field>
-
       <Field label="Kolor ucznia">
         {(showPalettes ? PALETTES : [PALETTES[0]]).map((pal) => (
           <View key={pal.name} style={{ marginBottom: spacing.sm }}>
@@ -193,7 +194,7 @@ export default function StudentForm() {
       </Field>
 
       <PrimaryButton
-        label={editing ? 'Zapisz zmiany' : 'Zapisz ucznia'}
+        label={editing ? 'Zapisz zmiany' : 'Dalej: termin w grafiku'}
         onPress={save}
         loading={busy}
         color={studentTone(color).main}

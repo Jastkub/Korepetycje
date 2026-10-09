@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, Share, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
 
-import { Card, Header, Progress, Screen, SectionLabel, STATUS_LABEL, statusTone, text } from '@/components/ui';
-import { dayMonth, weekday } from '@/lib/dates';
+import { Chip } from '@/components/lesson-actions';
+import { Card, Header, Screen, SectionLabel, text } from '@/components/ui';
+import { showAlert } from '@/lib/alert';
+import { DAY_NAME, WEEK } from '@/lib/schedule';
 import { studentStats } from '@/lib/stats';
 import { useApp } from '@/store/AppStore';
 import { studentTone } from '@/theme/studentColors';
@@ -16,11 +18,11 @@ export default function StudentProfile() {
   const t = text(c);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { getStudent, lessons, toggleHomework, addHomework, deleteHomework, setMaterialProgress } = useApp();
+  const { getStudent, lessons, slots, toggleHomework, addHomework, deleteHomework, updateLessons } = useApp();
   const student = getStudent(id);
-  const studentLessons = lessons
-    .filter((l) => l.studentId === id)
-    .sort((a, b) => b.date.localeCompare(a.date) || b.start.localeCompare(a.start));
+  const studentSlots = slots
+    .filter((x) => x.studentId === id)
+    .sort((a, b) => WEEK.indexOf(a.day) - WEEK.indexOf(b.day) || a.start.localeCompare(b.start));
 
   // Pola nowej pracy domowej (treść + termin).
   const [hwText, setHwText] = useState('');
@@ -47,12 +49,22 @@ export default function StudentProfile() {
       ``,
       `Odbyte spotkania: ${stats.done}`,
       stats.attendance === null ? `Frekwencja: —` : `Frekwencja: ${stats.attendance}%`,
-      `Materiał: ${student.materialTitle} (${student.materialProgress}%)`,
       stats.due > 0 ? `Do zapłaty: ${stats.due} zł` : `Rozliczenie: na bieżąco`,
       todo.length ? `\nPrace domowe:\n${todo.join('\n')}` : ``,
     ];
     Share.share({ message: lines.filter(Boolean).join('\n') });
   };
+
+  const unpaid = lessons.filter((l) => l.studentId === id && (l.status === 'present' || l.status === 'late') && !l.paid);
+  const settle = () =>
+    showAlert('Rozliczyć?', `${unpaid.length} nieopłaconych lekcji · ${stats.due} zł zostanie oznaczone jako opłacone.`, [
+      { text: 'Anuluj', style: 'cancel' },
+      { text: 'Rozlicz', onPress: () => updateLessons(unpaid.map((l) => l.id), { paid: true }) },
+    ]);
+
+  // Kontakt: jeśli to numer telefonu — przyciski „Zadzwoń" i „SMS".
+  const phone = student.contact.replace(/[^\d+]/g, '');
+  const isPhone = phone.replace('+', '').length >= 7;
 
   return (
     <Screen>
@@ -69,10 +81,15 @@ export default function StudentProfile() {
 
       {/* Trzy kafelki statystyk */}
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs }}>
+        <Stat value={`${student.rate} zł`} label="STAWKA" />
         <Stat value={`${stats.done}`} label="ODBYTE" />
-        <Stat value={stats.attendance === null ? '—' : `${stats.attendance}%`} label="FREKWENCJA" color={c.sage} />
-        <Stat value={`${student.rate}zł`} label="STAWKA" />
+        <Stat value={`${stats.due} zł`} label="DO ZAPŁATY" color={stats.due > 0 ? c.amber : c.sage} />
       </View>
+      {stats.due > 0 && (
+        <View style={{ marginTop: spacing.sm }}>
+          <Chip icon="checkmark-done" label={`Rozlicz ${stats.due} zł`} fg="#fff" bg={c.sage} onPress={settle} />
+        </View>
+      )}
 
       <SectionLabel
         right={
@@ -85,22 +102,36 @@ export default function StudentProfile() {
       <Card>
         <KV k="Klasa" v={student.grade} />
         <KV k="Przedmiot" v={student.subject} />
-        <KV k={student.contactLabel} v={student.contact} last />
+        <KV k={student.contactLabel} v={student.contact || '—'} last />
+        {isPhone && (
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+            <Chip icon="call-outline" label="Zadzwoń" fg={accent} bg={c.lineSoft} onPress={() => Linking.openURL(`tel:${phone}`)} />
+            <Chip icon="chatbubble-outline" label="SMS" fg={accent} bg={c.lineSoft} onPress={() => Linking.openURL(`sms:${phone}`)} />
+          </View>
+        )}
       </Card>
 
-      <SectionLabel>MATERIAŁ · {student.materialTitle.toUpperCase()}</SectionLabel>
+      <SectionLabel
+        right={
+          <Pressable onPress={() => router.push(`/dodaj-lekcje?student=${student.id}`)} hitSlop={8}>
+            <Ionicons name="add-circle-outline" size={18} color={accent} />
+          </Pressable>
+        }>
+        STAŁE TERMINY
+      </SectionLabel>
       <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ color: c.ink, fontSize: 13 }}>Postęp działu</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-            <Stepper label="−" onPress={() => setMaterialProgress(student.id, student.materialProgress - 10)} />
-            <Text style={{ color: c.ink, fontSize: 13, fontWeight: '700', width: 44, textAlign: 'center' }}>
-              {student.materialProgress}%
-            </Text>
-            <Stepper label="+" onPress={() => setMaterialProgress(student.id, student.materialProgress + 10)} />
-          </View>
-        </View>
-        <Progress value={student.materialProgress} color={accent} />
+        {studentSlots.length === 0 && (
+          <Text style={{ color: c.inkFaint, fontSize: 13 }}>Brak terminu w grafiku tygodniowym.</Text>
+        )}
+        {studentSlots.map((x, i) => (
+          <Pressable
+            key={x.id}
+            onPress={() => router.push(`/dodaj-lekcje?slot=${x.id}`)}
+            style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.lineSoft }}>
+            <Text style={{ color: c.ink, fontSize: 13.5, fontWeight: '600' }}>{DAY_NAME[x.day]}</Text>
+            <Text style={{ color: c.inkSoft, fontSize: 13.5, fontFamily: fonts.mono }}>{x.start}–{x.end}</Text>
+          </Pressable>
+        ))}
       </Card>
 
       <SectionLabel>PRACE DOMOWE</SectionLabel>
@@ -192,66 +223,7 @@ export default function StudentProfile() {
         </View>
       </Card>
 
-      <SectionLabel>HISTORIA LEKCJI</SectionLabel>
-      <Card>
-        {studentLessons.length === 0 && (
-          <Text style={{ color: c.inkFaint, fontSize: 13 }}>Brak lekcji w grafiku.</Text>
-        )}
-        {studentLessons.map((l, i) => {
-          const st = statusTone(c, l.status);
-          return (
-            <Pressable
-              key={l.id}
-              onPress={() => router.push(`/lekcja/${l.id}`)}
-              style={{
-                paddingVertical: spacing.sm,
-                borderTopWidth: i === 0 ? 0 : 1,
-                borderTopColor: c.lineSoft,
-              }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text style={{ color: c.ink, fontSize: 13.5, fontWeight: '600' }}>
-                  {weekday(l.date)} {dayMonth(l.date)} · {l.start}–{l.end}
-                </Text>
-                <View style={{ backgroundColor: st.soft, paddingHorizontal: 9, paddingVertical: 3, borderRadius: radius.pill }}>
-                  <Text style={{ color: st.main, fontSize: 10.5, fontWeight: '700', fontFamily: fonts.mono }}>
-                    {STATUS_LABEL[l.status]}
-                  </Text>
-                </View>
-              </View>
-              {l.note ? (
-                <Text style={{ color: c.inkSoft, fontSize: 12.5, marginTop: 4 }} numberOfLines={2}>
-                  „{l.note}"
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </Card>
     </Screen>
-  );
-}
-
-function Stepper({ label, onPress }: { label: string; onPress: () => void }) {
-  const c = useColors();
-  return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={6}
-      style={({ pressed }) => [
-        {
-          width: 30,
-          height: 30,
-          borderRadius: 9,
-          borderWidth: 1,
-          borderColor: c.line,
-          backgroundColor: c.paper,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        pressed && { opacity: 0.6 },
-      ]}>
-      <Text style={{ color: c.ink, fontSize: 18, fontWeight: '700', lineHeight: 20 }}>{label}</Text>
-    </Pressable>
   );
 }
 

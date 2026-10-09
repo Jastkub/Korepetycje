@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
-import { useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '@/lib/supabase';
@@ -51,6 +51,7 @@ function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   const submit = async () => {
     setError(null);
@@ -75,8 +76,14 @@ function LoginScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
-      <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl }}>
+    // Klawiatura nie może zasłaniać przycisku: ekran się przesuwa i przewija.
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1, backgroundColor: c.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.xl }}>
         <Text style={{ fontFamily: fonts.mono, fontSize: 12.5, letterSpacing: 1, color: c.accent, marginBottom: spacing.sm }}>
           KOREPETYCJE OS
         </Text>
@@ -95,15 +102,20 @@ function LoginScreen() {
           keyboardType="email-address"
           autoCapitalize="none"
           autoComplete="email"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
         />
 
         <Label>Hasło</Label>
         <Input
           value={password}
           onChangeText={setPassword}
+          ref={passwordRef}
           placeholder="••••••••"
           secureTextEntry
           autoCapitalize="none"
+          returnKeyType="go"
+          onSubmitEditing={submit}
         />
 
         {error && <Text style={{ color: c.rose, fontSize: 13, marginTop: spacing.sm }}>{error}</Text>}
@@ -145,8 +157,8 @@ function LoginScreen() {
             </Text>
           </Text>
         </Pressable>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -176,7 +188,7 @@ function Label({ children }: { children: ReactNode }) {
   );
 }
 
-function Input(props: React.ComponentProps<typeof TextInput>) {
+function Input(props: React.ComponentPropsWithRef<typeof TextInput>) {
   const c = useColors();
   return (
     <TextInput

@@ -48,9 +48,22 @@ export type Student = {
 
 export type Day = 'Pon' | 'Wt' | 'Śr' | 'Czw' | 'Pt' | 'Sob' | 'Nd';
 
+/** Stały termin w grafiku tygodniowym, np. uczeń X w poniedziałek 15:00–16:00. */
+export type Slot = {
+  id: string;
+  studentId: string;
+  day: Day;
+  start: string; // 'HH:MM'
+  end: string;
+  validFrom: string; // 'YYYY-MM-DD' — od kiedy obowiązuje
+  validTo: string | null; // do kiedy (włącznie); null = bezterminowo
+};
+
 export type Lesson = {
   id: string;
   studentId: string;
+  slotId?: string | null; // termin z grafiku, z którego pochodzi lekcja
+  virtual?: boolean; // true = wyliczona z grafiku, jeszcze niezapisana w bazie
   name: string;
   subject: string;
   grade: string;
@@ -63,11 +76,6 @@ export type Lesson = {
   paid: boolean;
   note?: string;
 };
-
-/** Który dzień traktujemy jako „dzisiaj" (na pulpit). Na razie na sztywno. */
-export const TODAY_DAY: Day = 'Śr';
-
-export const WEEK_DAYS: Day[] = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
 
 export const SUBJECTS = [
   'Matematyka',

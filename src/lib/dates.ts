@@ -41,38 +41,6 @@ export function addDays(iso: string, n: number): string {
   return toISO(d);
 }
 
-/** Data przesunięta o n miesięcy (dzień przycięty do długości miesiąca). */
-export function addMonthsDate(iso: string, n: number): string {
-  const [y, m, day] = iso.split('-').map(Number);
-  const d = new Date(y, m - 1 + n, 1);
-  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(day, lastDay));
-  return toISO(d);
-}
-
-/** Częstotliwość powtarzania lekcji. */
-export type RepeatFreq = 'once' | 'daily' | 'weekly' | 'monthly';
-
-/**
- * Lista dat powtarzania od `startISO` z krokiem `freq`, aż do `until` (włącznie).
- * 'once' albo brak/wcześniejsze `until` → tylko [startISO]. `cap` chroni przed lawiną.
- */
-export function occurrences(startISO: string, freq: RepeatFreq, until?: string, cap = 366): string[] {
-  if (freq === 'once') return [startISO];
-  const step = (d: string) =>
-    freq === 'daily' ? addDays(d, 1) : freq === 'weekly' ? addDays(d, 7) : addMonthsDate(d, 1);
-  const end = until && until >= startISO ? until : startISO;
-  const list: string[] = [];
-  let d = startISO;
-  let i = 0;
-  while (d <= end && i < cap) {
-    list.push(d);
-    d = step(d);
-    i++;
-  }
-  return list;
-}
-
 /** Poniedziałek tygodnia, w którym leży podana data. */
 export function weekStartISO(iso: string): string {
   const d = parseISO(iso);
@@ -83,19 +51,6 @@ export function weekStartISO(iso: string): string {
 /** Skrót dnia tygodnia, np. 'Śr'. */
 export function weekday(iso: string): Day {
   return WEEKDAYS[parseISO(iso).getDay()];
-}
-
-// Kolejność dni z poniedziałkiem na początku (Pon=0 ... Nd=6).
-const MON_FIRST: Day[] = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
-
-/** Indeks dnia tygodnia liczony od poniedziałku (Pon=0 ... Nd=6). */
-export function weekdayIndex(day: Day): number {
-  return MON_FIRST.indexOf(day);
-}
-
-/** Ta sama data, ale przesunięta na wskazany dzień tygodnia (w obrębie tego tygodnia). */
-export function setWeekday(iso: string, target: Day): string {
-  return addDays(weekStartISO(iso), weekdayIndex(target));
 }
 
 /** Dzień i miesiąc, np. '4.09'. */
@@ -149,31 +104,6 @@ export function durationHours(start: string, end: string): number {
   };
   const diff = toMin(end) - toMin(start);
   return diff > 0 ? diff / 60 : 0;
-}
-
-/** Czy data należy do danego miesiąca ('2026-09'). */
-export function inMonth(iso: string, key: string): boolean {
-  return iso.slice(0, 7) === key;
-}
-
-/**
- * Wszystkie dni do wyświetlenia w siatce miesiąca — od poniedziałku tygodnia
- * z 1. dniem miesiąca do niedzieli tygodnia z ostatnim dniem (pełne tygodnie).
- */
-export function monthGridDays(key: string): string[] {
-  const [y, m] = key.split('-').map(Number);
-  const first = `${key}-01`;
-  const lastDayNum = new Date(y, m, 0).getDate();
-  const last = `${key}-${String(lastDayNum).padStart(2, '0')}`;
-  const start = weekStartISO(first);
-  const end = addDays(weekStartISO(last), 6);
-  const days: string[] = [];
-  let d = start;
-  while (d <= end) {
-    days.push(d);
-    d = addDays(d, 1);
-  }
-  return days;
 }
 
 /** Zakres tygodnia, np. '2–8 września' albo '29 września – 5 października'. */

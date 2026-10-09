@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { Avatar, Card, Header, Screen, SortChips, text } from '@/components/ui';
+import { WEEK } from '@/lib/schedule';
 import { studentStats } from '@/lib/stats';
 import { useApp } from '@/store/AppStore';
-import { spacing } from '@/theme/tokens';
+import { fonts, radius, spacing } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
 
 type StudentSort = 'name' | 'recent' | 'rate' | 'lessons';
@@ -15,7 +16,15 @@ export default function StudentsScreen() {
   const c = useColors();
   const router = useRouter();
   const t = text(c);
-  const { students, lessons, refresh } = useApp();
+  const { students, lessons, slots, refresh } = useApp();
+
+  // Stałe terminy ucznia w skrócie, np. „Pon 15:00 · Czw 17:30".
+  const slotsLabel = (id: string) =>
+    slots
+      .filter((x) => x.studentId === id)
+      .sort((a, b) => WEEK.indexOf(a.day) - WEEK.indexOf(b.day) || a.start.localeCompare(b.start))
+      .map((x) => `${x.day} ${x.start}`)
+      .join(' · ');
   const [sort, setSort] = useState<StudentSort>('name');
 
   // Data ostatniej odbytej lekcji ucznia ('' gdy brak).
@@ -58,20 +67,30 @@ export default function StudentsScreen() {
           />
         )}
 
-        {sorted.map((s) => (
-          <Card key={s.id} onPress={() => router.push(`/uczen/${s.id}`)}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-              <Avatar student={s} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: c.ink, fontWeight: '700', fontSize: 15 }}>{s.name}</Text>
-                <Text style={t.soft}>
-                  {s.subject} · {s.grade} · {studentStats(s, lessons).done} spotkań
-                </Text>
+        {sorted.map((s) => {
+          const due = studentStats(s, lessons).due;
+          const when = slotsLabel(s.id);
+          return (
+            <Card key={s.id} onPress={() => router.push(`/uczen/${s.id}`)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <Avatar student={s} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: c.ink, fontWeight: '700', fontSize: 15 }}>{s.name}</Text>
+                  <Text style={t.soft} numberOfLines={1}>{s.subject} · {s.grade}</Text>
+                  <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: when ? c.indigo : c.inkFaint, marginTop: 2 }} numberOfLines={1}>
+                    {when || 'brak terminu w grafiku'}
+                  </Text>
+                </View>
+                {due > 0 && (
+                  <View style={{ backgroundColor: c.amberSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ color: c.amber, fontFamily: fonts.mono, fontSize: 11, fontWeight: '700' }}>{due} zł</Text>
+                  </View>
+                )}
+                <Ionicons name="chevron-forward" size={20} color={c.inkFaint} />
               </View>
-              <Ionicons name="chevron-forward" size={20} color={c.inkFaint} />
-            </View>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </Screen>
 
       {/* Pływający przycisk dodawania */}

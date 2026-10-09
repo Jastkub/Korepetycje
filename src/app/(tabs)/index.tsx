@@ -4,9 +4,11 @@ import { useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmActions } from '@/components/lesson-actions';
 import { statusTone } from '@/components/ui';
 import { type Lesson } from '@/data/mock';
 import { addDays, dayMonth, longDate, todayISO, weekday, weekStartISO } from '@/lib/dates';
+import { hasEnded } from '@/lib/schedule';
 import { weekBalance } from '@/lib/stats';
 import { useApp } from '@/store/AppStore';
 import { fonts, radius, spacing } from '@/theme/tokens';
@@ -173,6 +175,9 @@ function DayLessonCard({
         </View>
         <AttendanceMark lesson={lesson} ongoing={ongoing} />
       </View>
+
+      {/* Minęła, a nic nie zaznaczono → szybkie potwierdzenie */}
+      {lesson.status === 'planned' && hasEnded(lesson) && <ConfirmActions lesson={lesson} />}
 
       {/* Ikonka opłacone/nieopłacone — tylko dla odbytych, dotknij by zmienić */}
       {attended && (

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
+import { pendingLessons } from '@/lib/schedule';
+import { useApp } from '@/store/AppStore';
 import { fonts } from '@/theme/tokens';
 import { useColors } from '@/theme/useTheme';
 
@@ -10,6 +12,8 @@ import { useColors } from '@/theme/useTheme';
  */
 export default function TabsLayout() {
   const c = useColors();
+  const { lessons } = useApp();
+  const pending = pendingLessons(lessons).length;
   return (
     <Tabs
       screenOptions={{
@@ -40,8 +44,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="platnosci"
         options={{
-          title: 'Do zapłaty',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" size={size} color={color} />,
+          title: 'Rozliczenia',
+          tabBarBadge: pending > 0 ? pending : undefined,
+          tabBarBadgeStyle: { backgroundColor: c.accent, fontSize: 10 },
+          tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

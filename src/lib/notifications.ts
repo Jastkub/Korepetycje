@@ -23,6 +23,7 @@ Notifications.setNotificationHandler({
 
 const ENABLED_KEY = 'reminders.enabled';
 const MIN_KEY = 'reminders.minutes';
+const MAX_SCHEDULED = 60;
 
 export type ReminderPrefs = { enabled: boolean; minutes: number };
 
@@ -63,14 +64,18 @@ export async function syncReminders(lessons: Lesson[]) {
     if (!enabled) return;
 
     const now = Date.now();
+    const upcoming: { l: Lesson; fireAt: number }[] = [];
     for (const l of lessons) {
       if (!l.date || !l.start || l.status === 'cancelled') continue;
       const [h, m] = l.start.split(':').map(Number);
       const when = parseISO(l.date);
       when.setHours(h || 0, m || 0, 0, 0);
       const fireAt = when.getTime() - minutes * 60_000;
-      if (fireAt <= now) continue; // tylko przyszłe
-
+      if (fireAt > now) upcoming.push({ l, fireAt }); // tylko przyszłe
+    }
+    // iOS pozwala zaplanować najwyżej 64 powiadomienia — bierzemy najbliższe.
+    upcoming.sort((a, b) => a.fireAt - b.fireAt);
+    for (const { l, fireAt } of upcoming.slice(0, MAX_SCHEDULED)) {
       await Notifications.scheduleNotificationAsync({
         content: {
           title: `Za ${minutes} min: ${l.name}`,
